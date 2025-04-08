@@ -22,6 +22,10 @@ public static class CpuThermometer
     [DllImport("user32.dll")]
     public static extern int GetSystemMetrics(int nIndex);
 
+    [DllImport("user32.dll")]
+    extern static bool DestroyIcon(IntPtr handle);
+
+
     static NotifyIcon icon = new NotifyIcon();
     static CancellationTokenSource ctokenMonitor = new CancellationTokenSource();
     static int iconSize = GetSystemMetrics(50); // SM_CYSMICON
@@ -209,21 +213,36 @@ public static class CpuThermometer
     static Icon? lastIcon = null;
     static Icon GenerateIcon(float? temp)
     {
-        lastIcon?.Dispose();
-        string tempText = temp?.ToString("0") ?? "?";
+        try
+        {
+            string tempText = temp?.ToString("0") ?? "?";
 
-        using var bitmap = new Bitmap(iconSize, iconSize);
-        using Graphics graphics = Graphics.FromImage(bitmap);
+            using var bitmap = new Bitmap(iconSize, iconSize);
+            using Graphics graphics = Graphics.FromImage(bitmap);
+
+            // Draw tempText with anti-aliasing.
+            graphics.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAlias;
+            using Font font = new Font("Microsoft Sans Serif", 8);
+            graphics.DrawString(tempText, font, Brushes.Black, new Rectangle(new Point(0, 0), bitmap.Size),
+                new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Far });
+
+            Icon icon = Icon.FromHandle(bitmap.GetHicon());
             
-        // Draw tempText with anti-aliasing.
-        graphics.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAlias;
-        using Font font = new Font("Microsoft Sans Serif", 8);
-        graphics.DrawString(tempText, font, Brushes.Black, new Rectangle(new Point(0,0), bitmap.Size),
-            new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Far });
+            if (lastIcon != null)
+            {
+                // If we create an icon using FromHandle() we have to explicitly call DestroyIcon().
+                // See https://learn.microsoft.com/en-us/dotnet/api/system.drawing.icon.fromhandle?view=windowsdesktop-9.0#remarks
+                DestroyIcon(lastIcon.Handle);
+                lastIcon.Dispose();
+            }
+            lastIcon = icon;
 
-        Icon icon = Icon.FromHandle(bitmap.GetHicon());
-        lastIcon = icon;
-
-        return icon;
+            return icon;
+        }
+        catch (Exception e)
+        {
+            Console.WriteLine($"Error generating icon: {e.Message}");
+            return lastIcon;
+        }
     }
 }
